@@ -15,19 +15,19 @@ Feel free to fine tune large BERT models with large batch size easily, Multi-GPU
 
 List some optional parameters below:
 
-- task_name: the name of task which you want to fine tune. You can define your own task by implementing `DataProcessor` class.
-- do_train: fine tune classifier or not.
-- do_eval: evaluate classifier or not.
-- do_predict: predict by classifier recovered from checkpoint or not.
-- data_dir: your original input data directory.
-- vocab_file, bert_config_file, init_checkpoint: files in BERT model directory.
-- max_seq_length: max sequence length for a single input in BERT.
-- train_batch_size: batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
-- learning_rate: learning rate for Adam optimizer initialization.
-- num_train_epochs: train epoch number.
-- use_gpu: use GPU or not.
-- num_gpu_cores: total number of GPU cores to use. Only used if `use_gpu` is True.
-- output_dir: **checkpoints** and **savedmodel(.pb) files** will be saved in this directory.
+- `task_name`: the name of task which you want to fine tune, you can define your own task by implementing `DataProcessor` class.
+- `do_train`: fine tune classifier or not.
+- `do_eval`: evaluate classifier or not.
+- `do_predict`: predict by classifier recovered from checkpoint or not.
+- `data_dir`: your original input data directory.
+- `vocab_file`, `bert_config_file`, `init_checkpoint`: files in BERT model directory.
+- `max_seq_length`: max sequence length for a single input in BERT.
+- `train_batch_size`: batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
+- `learning_rate`: learning rate for Adam optimizer initialization.
+- `num_train_epochs`: train epoch number.
+- `use_gpu`: use GPU or not.
+- `num_gpu_cores`: total number of GPU cores to use, only used if `use_gpu` is True.
+- `output_dir`: **checkpoints** and **savedmodel(.pb) files** will be saved in this directory.
 
 ```shell
 python run_custom_classifier.py \
@@ -103,7 +103,7 @@ def main(_):
         "qqp": QqpProcessor,
         "custom": CustomProcessor,
     }
-	# ...
+    # ...
 ```
 
 
