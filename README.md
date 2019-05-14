@@ -1,4 +1,116 @@
+# bert-multi-gpu
 
+Feel free to fine tune large BERT models with large batch size easily, Multi-GPU supported.
+
+## Dependencies
+
+- Tensorflow
+  - tensorflow >= 1.11.0   # CPU Version of TensorFlow.
+  - tensorflow-gpu  >= 1.11.0  # GPU version of TensorFlow.
+- NVIDIA Collective Communications Library (NCCL)
+
+
+
+## Usage
+
+List some optional parameters below:
+
+- task_name: the name of task which you want to fine tune. You can define your own task by implementing `DataProcessor` class.
+- do_train: fine tune classifier or not.
+- do_eval: evaluate classifier or not.
+- do_predict: predict by classifier recovered from checkpoint or not.
+- data_dir: your original input data directory.
+- vocab_file, bert_config_file, init_checkpoint: files in BERT model directory.
+- max_seq_length: max sequence length for a single input in BERT.
+- train_batch_size: batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
+- learning_rate: learning rate for Adam optimizer initialization.
+- num_train_epochs: train epoch number.
+- use_gpu: use GPU or not.
+- num_gpu_cores: total number of GPU cores to use. Only used if `use_gpu` is True.
+- output_dir: **checkpoints** and **savedmodel(.pb) files** will be saved in this directory.
+
+```shell
+python run_custom_classifier.py \
+  --task_name=QQP \
+  --do_train=true \
+  --do_eval=true \
+  --do_predict=true \
+  --data_dir=/cfs/data/glue/QQP \
+  --vocab_file=/cfs/models/bert-large-uncased/vocab.txt \
+  --bert_config_file=/cfs/models/bert-large-uncased/bert_config.json \
+  --init_checkpoint=/cfs/models/bert-large-uncased/bert_model.ckpt \
+  --max_seq_length=128 \
+  --train_batch_size=24 \
+  --learning_rate=2e-5 \
+  --num_train_epochs=3.0 \
+  --use_gpu=true \
+  --num_gpu_cores=3 \
+  --output_dir=/cfs/outputs/bert-large-uncased-qqp
+```
+
+
+
+## What's More
+
+### Add custom task
+
+You can define your own task data processor by implementing `DataProcessor` class. 
+
+Then, add your `CustomProcessor` to processors.
+
+Finally, you can pass `--task=your_task_name` to python script. 
+
+```python
+# add task data processor in run_custom_classifier.py
+class CustomProcessor(DataProcessor):
+    """Processor for the Custom data set."""
+
+    def get_train_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(read_custom_train_lines(data_dir), 'train')
+
+    def get_dev_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(read_custom_dev_lines(data_dir), 'dev')
+
+    def get_test_examples(self, data_dir):
+        """See base class."""
+        return self._create_examples(read_custom_test_lines(data_dir), 'test')
+
+    def get_labels(self):
+        """See base class."""
+        return your_label_list # ["label-1", "label-2", "label-3", ..., "label-k"]
+
+    def _create_examples(self, lines, set_type):
+        """Creates examples for the training/evaluation/testing sets."""
+        examples = []
+        for (i, line) in enumerate(lines):
+            # text_b can be None
+            (guid, text_a, text_b, label) = parse_your_data_line(line)
+            examples.append(
+                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+        return examples
+
+# add CustomProcessor to processors in run_custom_classifier.py
+def main(_):
+    # ...
+    # adding 'custom' processor name means that you can pass --task_name=custom to this script
+    processors = {
+        "cola": ColaProcessor,
+        "mnli": MnliProcessor,
+        "mrpc": MrpcProcessor,
+        "xnli": XnliProcessor,
+        "qqp": QqpProcessor,
+        "custom": CustomProcessor,
+    }
+	# ...
+```
+
+
+
+## License
+
+```
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -200,3 +312,5 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+```
