@@ -15,26 +15,30 @@ Feel free to fine tune large BERT models with large batch size easily, Multi-GPU
 
 List some optional parameters below:
 
-- `task_name`: the name of task which you want to fine tune, you can define your own task by implementing `DataProcessor` class.
-- `do_train`: fine tune classifier or not.
-- `do_eval`: evaluate classifier or not.
-- `do_predict`: predict by classifier recovered from checkpoint or not.
-- `data_dir`: your original input data directory.
-- `vocab_file`, `bert_config_file`, `init_checkpoint`: files in BERT model directory.
-- `max_seq_length`: max sequence length for a single input in BERT.
-- `train_batch_size`: batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
-- `learning_rate`: learning rate for Adam optimizer initialization.
-- `num_train_epochs`: train epoch number.
-- `use_gpu`: use GPU or not.
-- `num_gpu_cores`: total number of GPU cores to use, only used if `use_gpu` is True.
+- `task_name`: The name of task which you want to fine tune, you can define your own task by implementing `DataProcessor` class.
+- `do_lower_case`: Whether to lower case the input text. Should be True for uncased models and False for cased models. Default value is `true`.
+- `do_train`: Fine tune classifier or not. Default value is `false`.
+- `do_eval`: Evaluate classifier or not. Default value is `false`.
+- `do_predict`: Predict by classifier recovered from checkpoint or not. Default value is `false`.
+- `save_for_serving`: Output savedmodel for tensorflow serving. Default value is `false`.
+- `data_dir`: Your original input data directory.
+- `vocab_file`, `bert_config_file`, `init_checkpoint`: Files in BERT model directory.
+- `max_seq_length`: The maximum total input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded. Default value is `128`.
+- `train_batch_size`: Batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
+- `learning_rate`: Learning rate for Adam optimizer initialization.
+- `num_train_epochs`: Train epoch number.
+- `use_gpu`: Use GPU or not.
+- `num_gpu_cores`: Total number of GPU cores to use, only used if `use_gpu` is True.
 - `output_dir`: **checkpoints** and **savedmodel(.pb) files** will be saved in this directory.
 
 ```shell
 python run_custom_classifier.py \
   --task_name=QQP \
+  --do_lower_case=true \
   --do_train=true \
   --do_eval=true \
   --do_predict=true \
+  --save_for_serving=true \
   --data_dir=/cfs/data/glue/QQP \
   --vocab_file=/cfs/models/bert-large-uncased/vocab.txt \
   --bert_config_file=/cfs/models/bert-large-uncased/bert_config.json \
@@ -61,7 +65,7 @@ Then, add your `CustomProcessor` to processors.
 Finally, you can pass `--task=your_task_name` to python script. 
 
 ```python
-# add task data processor in run_custom_classifier.py
+# Create custom task data processor in run_custom_classifier.py
 class CustomProcessor(DataProcessor):
     """Processor for the Custom data set."""
 
@@ -91,10 +95,10 @@ class CustomProcessor(DataProcessor):
                 InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
 
-# add CustomProcessor to processors in run_custom_classifier.py
+# Add CustomProcessor to processors in run_custom_classifier.py
 def main(_):
     # ...
-    # adding 'custom' processor name means that you can pass --task_name=custom to this script
+    # Register 'custom' processor name to processors, and you can pass --task_name=custom to this script
     processors = {
         "cola": ColaProcessor,
         "mnli": MnliProcessor,
@@ -107,6 +111,80 @@ def main(_):
 ```
 
 
+
+### Tensorflow serving
+
+If `--save_for_serving=true`, python script will export **savedmodel** file to `output_dir`. Now you are good to go.
+
+- Install the [SavedModel CLI](https://www.tensorflow.org/guide/saved_model#install_the_savedmodel_cli) by installing a pre-built Tensorflow binary(usually already installed on your system at pathname `bin\saved_model_cli`) or building TensorFlow from source code.
+
+- Check your **SavedModel** file:
+
+  ```shell
+  saved_model_cli show --dir <bert_classifier_savedmodel_output_path>/<timestamp> --all
+  
+  # For example:
+  saved_model_cli show --dir tf_serving/bert_base_uncased_multi_gpu_qqp/1557722227/ --all
+  
+  # Output:
+  # signature_def['serving_default']:
+  #   The given SavedModel SignatureDef contains the following input(s):
+  #     inputs['input_ids'] tensor_info:
+  #         dtype: DT_INT32
+  #         shape: (-1, 128)
+  #         name: input_ids:0
+  #     inputs['input_mask'] tensor_info:
+  #         dtype: DT_INT32
+  #         shape: (-1, 128)
+  #         name: input_mask:0
+  #     inputs['label_ids'] tensor_info:
+  #         dtype: DT_INT32
+  #         shape: (-1)
+  #         name: label_ids:0
+  #     inputs['segment_ids'] tensor_info:
+  #         dtype: DT_INT32
+  #         shape: (-1, 128)
+  #         name: segment_ids:0
+  #   The given SavedModel SignatureDef contains the following output(s):
+  #     outputs['probabilities'] tensor_info:
+  #         dtype: DT_FLOAT
+  #         shape: (-1, 2)
+  #         name: loss/Softmax:0
+  #   Method name is: tensorflow/serving/predict
+  ```
+
+- Install [Bazel](https://docs.bazel.build/versions/master/install.html) and compile **tensorflow_model_server**.
+
+  ```shell
+  cd /your/path/to/tensorflow/serving
+  bazel build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
+  ```
+
+- Start tensorflow serving to listen on port for **HTTP/REST API** or **gRPC API**, `tensorflow_model_server` will initialize the models under `<bert_classifier_savedmodel_output_path>`.
+
+  ```shell
+  # HTTP/REST API
+  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=<rest_api_port> --model_name=<model_name> --model_base_path=<bert_classifier_savedmodel_output_path>
+  
+  # For example:
+  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=9000 --model_name=bert_base_uncased_qqp --model_base_path=/root/tf_serving/bert_base_uncased_multi_gpu_qqp
+  
+  # Output:
+  # 2019-05-14 23:26:38.135575: I tensorflow_serving/core/loader_harness.cc:86] Successfully loaded servable version {name: bert_base_uncased_qqp version: 1557722227}
+  # 2019-05-14 23:26:38.158674: I tensorflow_serving/model_servers/server.cc:324] Running gRPC ModelServer at 0.0.0.0:8500 ...
+  # 2019-05-14 23:26:38.179164: I tensorflow_serving/model_servers/server.cc:344] Exporting HTTP/REST API at:localhost:9000 ...
+  ```
+
+- Make a request to test your latest serving model.
+
+  ```shell
+  curl -H "Content-type: application/json" -X POST -d '{"instances": [{"input_ids": [101,2054,2064,2028,2079,2044,16914,5910,1029,102,2054,2079,1045,2079,2044,2026,16914,5910,1029,102,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], "input_mask": [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], "segment_ids": [0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], "label_ids":[0]}]}'  "http://localhost:9000/v1/models/bert_base_uncased_qqp:predict"
+  
+  # Output:
+  # {"predictions": [[0.608512461, 0.391487628]]}
+  ```
+
+  
 
 ## License
 
