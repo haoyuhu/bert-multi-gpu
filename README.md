@@ -20,7 +20,7 @@ List some optional parameters below:
 - `do_train`: Fine tune classifier or not. Default value is `false`.
 - `do_eval`: Evaluate classifier or not. Default value is `false`.
 - `do_predict`: Predict by classifier recovered from checkpoint or not. Default value is `false`.
-- `save_for_serving`: Output savedmodel for tensorflow serving. Default value is `false`.
+- `save_for_serving`: Output SavedModel for tensorflow serving. Default value is `false`.
 - `data_dir`: Your original input data directory.
 - `vocab_file`, `bert_config_file`, `init_checkpoint`: Files in BERT model directory.
 - `max_seq_length`: The maximum total input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded. Default value is `128`.
@@ -29,7 +29,7 @@ List some optional parameters below:
 - `num_train_epochs`: Train epoch number.
 - `use_gpu`: Use GPU or not.
 - `num_gpu_cores`: Total number of GPU cores to use, only used if `use_gpu` is True.
-- `output_dir`: **checkpoints** and **savedmodel(.pb) files** will be saved in this directory.
+- `output_dir`: **Checkpoints** and **SavedModel(.pb) files** will be saved in this directory.
 
 ```shell
 python run_custom_classifier.py \
@@ -114,7 +114,7 @@ def main(_):
 
 ### Tensorflow serving
 
-If `--save_for_serving=true`, python script will export **savedmodel** file to `output_dir`. Now you are good to go.
+If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python script will export **SavedModel** file to `output_dir`. Now you are good to go.
 
 - Install the [SavedModel CLI](https://www.tensorflow.org/guide/saved_model#install_the_savedmodel_cli) by installing a pre-built Tensorflow binary(usually already installed on your system at pathname `bin\saved_model_cli`) or building TensorFlow from source code.
 
