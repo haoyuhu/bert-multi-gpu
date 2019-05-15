@@ -167,7 +167,7 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python scr
   bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=<rest_api_port> --model_name=<model_name> --model_base_path=<bert_classifier_savedmodel_output_path>
   
   # For example:
-  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=9000 --model_name=bert_base_uncased_qqp --model_base_path=/root/tf_serving/bert_base_uncased_multi_gpu_qqp
+  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=9000 --model_name=bert_base_uncased_qqp --model_base_path=/root/tf_serving/bert_base_uncased_multi_gpu_qqp --enable_batching=true
   
   # Output:
   # 2019-05-14 23:26:38.135575: I tensorflow_serving/core/loader_harness.cc:86] Successfully loaded servable version {name: bert_base_uncased_qqp version: 1557722227}
