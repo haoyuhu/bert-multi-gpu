@@ -160,7 +160,7 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python scr
   bazel build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
   ```
 
-- Start tensorflow serving to listen on port for **HTTP/REST API** or **gRPC API**, `tensorflow_model_server` will initialize the models under `<bert_classifier_savedmodel_output_path>`.
+- Start tensorflow serving to listen on port for **HTTP/REST API** or **gRPC API**, `tensorflow_model_server` will initialize the models in `<bert_classifier_savedmodel_output_path>`.
 
   ```shell
   # HTTP/REST API
