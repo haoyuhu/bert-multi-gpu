@@ -1,6 +1,6 @@
 # bert-multi-gpu
 
-Feel free to fine tune large BERT models with large batch size easily, Multi-GPU supported.
+Feel free to fine tune large BERT models with large batch size easily. Multi-GPU and FP16 are supported.
 
 ## Dependencies
 
