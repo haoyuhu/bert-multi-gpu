@@ -856,7 +856,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
     return features
 
 
-def save_for_serving(estimator, serving_dir, seq_length):
+def save_for_serving(estimator, serving_dir, seq_length, is_tpu_estimator):
     feature_map = {
         "input_ids": tf.placeholder(tf.int32, shape=[None, seq_length], name='input_ids'),
         "input_mask": tf.placeholder(tf.int32, shape=[None, seq_length], name='input_mask'),
@@ -864,6 +864,9 @@ def save_for_serving(estimator, serving_dir, seq_length):
         "label_ids": tf.placeholder(tf.int32, shape=[None], name='label_ids'),
     }
     serving_input_receiver_fn = tf.estimator.export.build_raw_serving_input_receiver_fn(feature_map)
+    if is_tpu_estimator:
+        # REF: https://github.com/google-research/bert/issues/146#issuecomment-441865716
+        estimator._export_to_tpu = False  # this is important
     estimator.export_savedmodel(serving_dir,
                                 serving_input_receiver_fn,
                                 strip_default_attrs=True)
@@ -1107,7 +1110,8 @@ def main(_):
 
     if FLAGS.do_train and FLAGS.save_for_serving:
         serving_dir = os.path.join(FLAGS.output_dir, 'serving')
-        save_for_serving(estimator, serving_dir, FLAGS.max_seq_length)
+        is_tpu_estimator = not FLAGS.use_gpu or int(FLAGS.num_gpu_cores) < 2
+        save_for_serving(estimator, serving_dir, FLAGS.max_seq_length, is_tpu_estimator)
 
 
 if __name__ == "__main__":
