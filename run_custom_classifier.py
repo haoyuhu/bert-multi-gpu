@@ -917,12 +917,10 @@ def main(_):
         tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
             FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
-    gpu_options = tf.GPUOptions(allow_growth=True)
-    session_config = tf.ConfigProto(gpu_options=gpu_options)
     is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
     if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
         tf.logging.info("Use normal RunConfig")
-        # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-4225061263
+        # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-422506263
         dist_strategy = tf.contrib.distribute.MirroredStrategy(
             num_gpus=FLAGS.num_gpu_cores,
             cross_device_ops=AllReduceCrossDeviceOps('nccl', num_packs=FLAGS.num_gpu_cores),
@@ -934,7 +932,6 @@ def main(_):
             eval_distribute=dist_strategy,
             log_step_count_steps=log_every_n_steps,
             model_dir=FLAGS.output_dir,
-            session_config=session_config,
             save_checkpoints_steps=FLAGS.save_checkpoints_steps)
     else:
         tf.logging.info("Use TPURunConfig")
@@ -942,7 +939,6 @@ def main(_):
             cluster=tpu_cluster_resolver,
             master=FLAGS.master,
             model_dir=FLAGS.output_dir,
-            session_config=session_config,
             save_checkpoints_steps=FLAGS.save_checkpoints_steps,
             tpu_config=tf.contrib.tpu.TPUConfig(
                 iterations_per_loop=FLAGS.iterations_per_loop,
