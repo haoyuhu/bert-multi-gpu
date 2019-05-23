@@ -15,7 +15,7 @@ Feel free to fine tune large BERT models with large batch size easily. Multi-GPU
 
 - CPU/GPU/TPU Support
 - **Multi-GPU Support**: [`tf.distribute.MirroredStrategy`](https://www.tensorflow.org/api_docs/python/tf/distribute/MirroredStrategy) is used to achieve Multi-GPU support for this project, which mirrors vars to distribute across multiple devices and machines. The maximum batch_size for each GPU is almost the same as [bert](https://github.com/google-research/bert/blob/master/README.md#out-of-memory-issues). So **global batch_size** depends on how many GPUs there are.
-- **FP16 Support**: [FP16](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) allows you to use a larger batch_size. And training speed will increase by 10~20%.
+- **FP16 Support**: [FP16](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) allows you to use a larger batch_size. And training speed will increase by 70~100% on Volta GPUs, but may be slower on Pascal GPUs([REF1](https://github.com/tensorflow/tensorflow/issues/15585#issuecomment-361769151), [REF2](https://github.com/HaoyuHu/bert-multi-gpu/issues/1#issuecomment-493363383)).
 - **SavedModel Export**
 
 
