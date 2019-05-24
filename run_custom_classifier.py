@@ -139,6 +139,8 @@ flags.DEFINE_integer(
     "Only used if `use_gpu` is True. Total number of GPU cores to use."
 )
 
+flags.DEFINE_bool("use_fp16", False, "Whether to use fp16.")
+
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -625,15 +627,17 @@ def _truncate_seq_pair(tokens_a, tokens_b, max_length):
 
 
 def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
-                 labels, num_labels, use_one_hot_embeddings):
+                 labels, num_labels, use_one_hot_embeddings, fp16):
     """Creates a classification model."""
+    comp_type = tf.float16 if fp16 else tf.float32
     model = modeling.BertModel(
         config=bert_config,
         is_training=is_training,
         input_ids=input_ids,
         input_mask=input_mask,
         token_type_ids=segment_ids,
-        use_one_hot_embeddings=use_one_hot_embeddings)
+        use_one_hot_embeddings=use_one_hot_embeddings,
+        comp_type=comp_type)
 
     # In the demo, we are doing a simple classification task on the entire
     # segment.
@@ -671,7 +675,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
 
 def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
-                     use_one_hot_embeddings):
+                     use_one_hot_embeddings, use_gpu, num_gpu_cores, fp16):
     """Returns `model_fn` closure for TPUEstimator."""
 
     def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
@@ -695,7 +699,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
         (total_loss, per_example_loss, logits, probabilities) = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-            num_labels, use_one_hot_embeddings)
+            num_labels, use_one_hot_embeddings, FLAGS.use_fp16)
 
         tvars = tf.trainable_variables()
         initialized_variable_names = {}
@@ -722,9 +726,9 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                             init_string)
 
         if mode == tf.estimator.ModeKeys.TRAIN:
-            if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
+            if use_gpu and int(num_gpu_cores) >= 2:
                 train_op = custom_optimization.create_optimizer(
-                    total_loss, learning_rate, num_train_steps, num_warmup_steps)
+                    total_loss, learning_rate, num_train_steps, num_warmup_steps, fp16=fp16)
                 output_spec = tf.estimator.EstimatorSpec(
                     mode=mode,
                     loss=total_loss,
@@ -732,7 +736,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                     scaffold=scaffold_fn)
             else:
                 train_op = optimization.create_optimizer(
-                    total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
+                    total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu, fp16=fp16)
                 output_spec = tf.contrib.tpu.TPUEstimatorSpec(
                     mode=mode,
                     loss=total_loss,
@@ -753,7 +757,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
             eval_metrics = (metric_fn,
                             [per_example_loss, label_ids, logits, is_real_example])
-            if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
+            if use_gpu and int(num_gpu_cores) >= 2:
                 output_spec = tf.estimator.EstimatorSpec(
                     mode=mode,
                     loss=total_loss,
@@ -765,7 +769,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                     eval_metrics=eval_metrics,
                     scaffold_fn=scaffold_fn)
         else:
-            if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
+            if use_gpu and int(num_gpu_cores) >= 2:
                 output_spec = tf.estimator.EstimatorSpec(
                     mode=mode,
                     predictions={"probabilities": probabilities})
@@ -852,11 +856,11 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
     return features
 
 
-def save_for_serving(estimator, serving_dir, is_tpu_estimator):
+def save_for_serving(estimator, serving_dir, seq_length, is_tpu_estimator):
     feature_map = {
-        "input_ids": tf.placeholder(tf.int32, shape=[None, FLAGS.max_seq_length], name='input_ids'),
-        "input_mask": tf.placeholder(tf.int32, shape=[None, FLAGS.max_seq_length], name='input_mask'),
-        "segment_ids": tf.placeholder(tf.int32, shape=[None, FLAGS.max_seq_length], name='segment_ids'),
+        "input_ids": tf.placeholder(tf.int32, shape=[None, seq_length], name='input_ids'),
+        "input_mask": tf.placeholder(tf.int32, shape=[None, seq_length], name='input_mask'),
+        "segment_ids": tf.placeholder(tf.int32, shape=[None, seq_length], name='segment_ids'),
         "label_ids": tf.placeholder(tf.int32, shape=[None], name='label_ids'),
     }
     serving_input_receiver_fn = tf.estimator.export.build_raw_serving_input_receiver_fn(feature_map)
@@ -915,7 +919,8 @@ def main(_):
 
     is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
     if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
-        # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-4225061263
+        tf.logging.info("Use normal RunConfig")
+        # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-422506263
         dist_strategy = tf.contrib.distribute.MirroredStrategy(
             num_gpus=FLAGS.num_gpu_cores,
             cross_device_ops=AllReduceCrossDeviceOps('nccl', num_packs=FLAGS.num_gpu_cores),
@@ -929,6 +934,7 @@ def main(_):
             model_dir=FLAGS.output_dir,
             save_checkpoints_steps=FLAGS.save_checkpoints_steps)
     else:
+        tf.logging.info("Use TPURunConfig")
         run_config = tf.contrib.tpu.RunConfig(
             cluster=tpu_cluster_resolver,
             master=FLAGS.master,
@@ -963,16 +969,21 @@ def main(_):
         num_train_steps=num_train_steps,
         num_warmup_steps=num_warmup_steps,
         use_tpu=FLAGS.use_tpu,
-        use_one_hot_embeddings=FLAGS.use_tpu)
+        use_one_hot_embeddings=FLAGS.use_tpu,
+        use_gpu=FLAGS.use_gpu,
+        num_gpu_cores=FLAGS.num_gpu_cores,
+        fp16=FLAGS.use_fp16)
 
     # If TPU is not available, this will fall back to normal Estimator on CPU
     # or GPU.
     if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
+        tf.logging.info("Use normal Estimator")
         estimator = Estimator(
             model_fn=model_fn,
             params={},
             config=run_config)
     else:
+        tf.logging.info("Use TPUEstimator")
         estimator = tf.contrib.tpu.TPUEstimator(
             use_tpu=FLAGS.use_tpu,
             model_fn=model_fn,
@@ -1096,7 +1107,7 @@ def main(_):
     if FLAGS.do_train and FLAGS.save_for_serving:
         serving_dir = os.path.join(FLAGS.output_dir, 'serving')
         is_tpu_estimator = not FLAGS.use_gpu or int(FLAGS.num_gpu_cores) < 2
-        save_for_serving(estimator, serving_dir, is_tpu_estimator)
+        save_for_serving(estimator, serving_dir, FLAGS.max_seq_length, is_tpu_estimator)
 
 
 if __name__ == "__main__":

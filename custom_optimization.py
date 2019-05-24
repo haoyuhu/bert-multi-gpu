@@ -28,7 +28,7 @@ from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import resource_variable_ops
 
 
-def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps):
+def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, fp16=False):
     """Creates an optimizer training op."""
     global_step = tf.train.get_or_create_global_step()
 
@@ -70,11 +70,30 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps):
         epsilon=1e-6,
         exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
 
+    # REF: https://github.com/tensorflow/tensorflow/issues/25080
+    # if fp16:
+    #     loss_scale_manager = tf.contrib.mixed_precision.ExponentialUpdateLossScaleManager(
+    #         init_loss_scale=2 ** 32,
+    #         incr_every_n_steps=1000,
+    #         decr_every_n_nan_or_inf=2,
+    #         decr_ratio=0.5)
+    #     optimizer = tf.contrib.mixed_precision.LossScaleOptimizer(optimizer, loss_scale_manager)
+
     tvars = tf.trainable_variables()
-    grads = tf.gradients(loss, tvars)
+    gvs = optimizer.compute_gradients(loss, tvars)
+    gvs = [(g, v) for g, v in gvs if g is not None]
+    grads, tvars = list(zip(*gvs))
+    if fp16:
+        all_finite = tf.reduce_all([tf.reduce_all(tf.is_finite(g)) for g in grads])
+    else:
+        all_finite = tf.constant(True, dtype=tf.bool)
 
     # This is how the model was pre-trained.
-    (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+    (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0,
+                                        use_norm=tf.cond(
+                                            all_finite,
+                                            lambda: tf.global_norm(grads),
+                                            lambda: tf.constant(1.0)))
 
     train_op = optimizer.apply_gradients(
         zip(grads, tvars), global_step=global_step)
@@ -82,7 +101,8 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps):
     # Normally the global step update is done inside of `apply_gradients`.
     # However, `AdamWeightDecayOptimizer` doesn't do this. But if you use
     # a different optimizer, you should probably take this line out.
-    new_global_step = global_step + 1
+    new_global_step = tf.cond(all_finite, lambda: global_step + 1, lambda: global_step)
+    new_global_step = tf.identity(new_global_step, name='update_step')
     train_op = tf.group(train_op, [global_step.assign(new_global_step)])
     return train_op
 
@@ -101,7 +121,7 @@ class AdamWeightDecayOptimizer(Optimizer):
         """Constructs a AdamWeightDecayOptimizer."""
         super(AdamWeightDecayOptimizer, self).__init__(False, name)
 
-        self.learning_rate = learning_rate
+        self.learning_rate = tf.identity(learning_rate, name='learning_rate')
         self.weight_decay_rate = weight_decay_rate
         self.beta_1 = beta_1
         self.beta_2 = beta_2
