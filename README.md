@@ -1,6 +1,6 @@
 # bert-multi-gpu
 
-Feel free to fine tune large BERT models with large batch size easily. Multi-GPU are supported.
+Feel free to fine tune large BERT models with large batch size easily. Multi-GPU and FP16 are supported.
 
 ## Dependencies
 
@@ -8,6 +8,15 @@ Feel free to fine tune large BERT models with large batch size easily. Multi-GPU
   - tensorflow >= 1.11.0   # CPU Version of TensorFlow.
   - tensorflow-gpu  >= 1.11.0  # GPU version of TensorFlow.
 - NVIDIA Collective Communications Library (NCCL)
+
+
+
+## Features
+
+- CPU/GPU/TPU Support
+- **Multi-GPU Support**: [`tf.distribute.MirroredStrategy`](https://www.tensorflow.org/api_docs/python/tf/distribute/MirroredStrategy) is used to achieve Multi-GPU support for this project, which mirrors vars to distribute across multiple devices and machines. The maximum batch_size for each GPU is almost the same as [bert](https://github.com/google-research/bert/blob/master/README.md#out-of-memory-issues). So **global batch_size** depends on how many GPUs there are.
+- **FP16 Support**: [FP16](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) allows you to use a larger batch_size. And training speed will increase by 70~100% on Volta GPUs, but may be slower on Pascal GPUs([REF1](https://github.com/tensorflow/tensorflow/issues/15585#issuecomment-361769151), [REF2](https://github.com/HaoyuHu/bert-multi-gpu/issues/1#issuecomment-493363383)).
+- **SavedModel Export**
 
 
 
@@ -29,6 +38,7 @@ List some optional parameters below:
 - `num_train_epochs`: Train epoch number.
 - `use_gpu`: Use GPU or not.
 - `num_gpu_cores`: Total number of GPU cores to use, only used if `use_gpu` is True.
+- `use_fp16`: Use [`FP16`](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) or not.
 - `output_dir`: **Checkpoints** and **SavedModel(.pb) files** will be saved in this directory.
 
 ```shell
@@ -49,6 +59,7 @@ python run_custom_classifier.py \
   --num_train_epochs=3.0 \
   --use_gpu=true \
   --num_gpu_cores=3 \
+  --use_fp16=true \
   --output_dir=/cfs/outputs/bert-large-uncased-qqp
 ```
 
