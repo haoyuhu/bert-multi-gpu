@@ -99,10 +99,10 @@ flags.DEFINE_float(
     "Proportion of training to perform linear learning rate warmup for. "
     "E.g., 0.1 = 10% of training.")
 
-flags.DEFINE_integer("save_checkpoints_steps", 1000,
+flags.DEFINE_integer("save_checkpoints_steps", 10000,
                      "How often to save the model checkpoint.")
 
-flags.DEFINE_integer("iterations_per_loop", 1000,
+flags.DEFINE_integer("iterations_per_loop", 10000,
                      "How many steps to make in each estimator call.")
 
 flags.DEFINE_bool("use_tpu", False, "Whether to use TPU or GPU/CPU.")
@@ -699,7 +699,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
 
         (total_loss, per_example_loss, logits, probabilities) = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-            num_labels, use_one_hot_embeddings, FLAGS.use_fp16)
+            num_labels, use_one_hot_embeddings, fp16)
 
         tvars = tf.trainable_variables()
         initialized_variable_names = {}
@@ -954,11 +954,6 @@ def main(_):
             len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
         num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
-    # if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2 and FLAGS.do_train:
-    #     init_checkpoint = None
-    # else:
-    #     init_checkpoint = FLAGS.init_checkpoint
-
     init_checkpoint = FLAGS.init_checkpoint
 
     model_fn = model_fn_builder(
@@ -1006,9 +1001,7 @@ def main(_):
             is_training=True,
             drop_remainder=True,
             batch_size=FLAGS.train_batch_size)
-        estimator.train(input_fn=train_input_fn,
-                        max_steps=num_train_steps,
-                        )
+        estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
     if FLAGS.do_eval:
         eval_examples = processor.get_dev_examples(FLAGS.data_dir)
