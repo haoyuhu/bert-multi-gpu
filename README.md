@@ -22,6 +22,8 @@ Feel free to fine tune large BERT models with large batch size easily. Multi-GPU
 
 ## Usage
 
+### Run Classifier
+
 List some optional parameters below:
 
 - `task_name`: The name of task which you want to fine tune, you can define your own task by implementing `DataProcessor` class.
@@ -54,13 +56,58 @@ python run_custom_classifier.py \
   --bert_config_file=/cfs/models/bert-large-uncased/bert_config.json \
   --init_checkpoint=/cfs/models/bert-large-uncased/bert_model.ckpt \
   --max_seq_length=128 \
-  --train_batch_size=24 \
+  --train_batch_size=32 \
   --learning_rate=2e-5 \
   --num_train_epochs=3.0 \
   --use_gpu=true \
-  --num_gpu_cores=3 \
+  --num_gpu_cores=4 \
   --use_fp16=true \
   --output_dir=/cfs/outputs/bert-large-uncased-qqp
+```
+
+
+
+### Run Sequence Labeling
+
+List some optional parameters below:
+
+- `task_name`: The name of task which you want to fine tune, you can define your own task by implementing `DataProcessor` class.
+- `do_lower_case`: Whether to lower case the input text. Should be True for uncased models and False for cased models. Default value is `true`.
+- `do_train`: Fine tune model or not. Default value is `false`.
+- `do_eval`: Evaluate model or not. Default value is `false`.
+- `do_predict`: Predict by model recovered from checkpoint or not. Default value is `false`.
+- `save_for_serving`: Output SavedModel for tensorflow serving. Default value is `false`.
+- `data_dir`: Your original input data directory.
+- `vocab_file`, `bert_config_file`, `init_checkpoint`: Files in BERT model directory.
+- `max_seq_length`: The maximum total input sequence length after WordPiece tokenization. Sequences longer than this will be truncated, and sequences shorter than this will be padded. Default value is `128`.
+- `train_batch_size`: Batch size for [**each GPU**](<https://stackoverflow.com/questions/54327610/does-tensorflow-estimator-take-different-batches-for-workers-when-mirroredstrate/54332773#54332773>). For example, if `train_batch_size` is 16, and `num_gpu_cores` is 4, your **GLOBAL** batch size is 16 * 4 = 64.
+- `learning_rate`: Learning rate for Adam optimizer initialization.
+- `num_train_epochs`: Train epoch number.
+- `use_gpu`: Use GPU or not.
+- `num_gpu_cores`: Total number of GPU cores to use, only used if `use_gpu` is True.
+- `use_fp16`: Use [`FP16`](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) or not.
+- `output_dir`: **Checkpoints** and **SavedModel(.pb) files** will be saved in this directory.
+
+```shell
+python run_seq_labeling.py \
+  --task_name=PUNCT \
+  --do_lower_case=true \
+  --do_train=true \
+  --do_eval=true \
+  --do_predict=true \
+  --save_for_serving=true \
+  --data_dir=/cfs/data/PUNCT \
+  --vocab_file=/cfs/models/bert-large-uncased/vocab.txt \
+  --bert_config_file=/cfs/models/bert-large-uncased/bert_config.json \
+  --init_checkpoint=/cfs/models/bert-large-uncased/bert_model.ckpt \
+  --max_seq_length=128 \
+  --train_batch_size=32 \
+  --learning_rate=5e-5 \
+  --num_train_epochs=10.0 \
+  --use_gpu=true \
+  --num_gpu_cores=4 \
+  --use_fp16=true \
+  --output_dir=/cfs/outputs/bert-large-uncased-punct
 ```
 
 
@@ -125,14 +172,14 @@ def main(_):
 
 ### Tensorflow serving
 
-If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python script will export **SavedModel** file to `output_dir`. Now you are good to go.
+If `--save_for_serving=true` is passed to `run_custom_classifier.py` or `run_seq_labeling.py`, python script will export **SavedModel** file to `output_dir`. Now you are good to go.
 
 - Install the [SavedModel CLI](https://www.tensorflow.org/guide/saved_model#install_the_savedmodel_cli) by installing a pre-built Tensorflow binary(usually already installed on your system at pathname `bin\saved_model_cli`) or building TensorFlow from source code.
 
 - Check your **SavedModel** file:
 
   ```shell
-  saved_model_cli show --dir <bert_classifier_savedmodel_output_path>/<timestamp> --all
+  saved_model_cli show --dir <bert_savedmodel_output_path>/<timestamp> --all
   
   # For example:
   saved_model_cli show --dir tf_serving/bert_base_uncased_multi_gpu_qqp/1557722227/ --all
@@ -171,11 +218,11 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python scr
   bazel build -c opt //tensorflow_serving/model_servers:tensorflow_model_server
   ```
 
-- Start tensorflow serving to listen on port for **HTTP/REST API** or **gRPC API**, `tensorflow_model_server` will initialize the models in `<bert_classifier_savedmodel_output_path>`.
+- Start tensorflow serving to listen on port for **HTTP/REST API** or **gRPC API**, `tensorflow_model_server` will initialize the models in `<bert_savedmodel_output_path>`.
 
   ```shell
   # HTTP/REST API
-  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=<rest_api_port> --model_name=<model_name> --model_base_path=<bert_classifier_savedmodel_output_path>
+  bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=<rest_api_port> --model_name=<model_name> --model_base_path=<bert_savedmodel_output_path>
   
   # For example:
   bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=9000 --model_name=bert_base_uncased_qqp --model_base_path=/root/tf_serving/bert_base_uncased_multi_gpu_qqp --enable_batching=true
