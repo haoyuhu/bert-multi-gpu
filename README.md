@@ -195,6 +195,9 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py`, python scr
   # {"predictions": [[0.608512461, 0.391487628]]}
   ```
 
+
+## Stargazers over time
+[![Stargazers over time](https://starchart.cc/HaoyuHu/bert-multi-gpu.svg)](https://starchart.cc/HaoyuHu/bert-multi-gpu)
   
 
 ## License
