@@ -749,12 +749,20 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                 predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
                 accuracy = tf.metrics.accuracy(
                     labels=label_ids, predictions=predictions, weights=is_real_example)
+                # add more metrics
+                pr, pr_op = tf.metrics.precision(
+                    labels=label_ids, predictions=predictions, weights=is_real_example)
+                re, re_op = tf.metrics.recall(
+                    labels=label_ids, predictions=predictions, weights=is_real_example)
+                f1 = (2 * pr * re) / (pr + re)  # f1-score for binary classification
                 loss = tf.metrics.mean(values=per_example_loss, weights=is_real_example)
                 return {
                     "eval_accuracy": accuracy,
-                    "eval_loss": loss,
+                    "eval_precision": (pr, pr_op),
+                    "eval_recall": (re, re_op),
+                    "eval_f1score": (f1, tf.identity(f1)),
+                    "eval_loss": loss
                 }
-
             eval_metrics = (metric_fn,
                             [per_example_loss, label_ids, logits, is_real_example])
             if use_gpu and int(num_gpu_cores) >= 2:
