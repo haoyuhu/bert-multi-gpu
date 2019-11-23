@@ -6,7 +6,7 @@ Feel free to fine tune large BERT models with large batch size easily. Multi-GPU
 
 - Tensorflow
   - tensorflow >= 1.11.0   # CPU Version of TensorFlow.
-  - tensorflow-gpu  >= 1.11.0  # GPU version of TensorFlow.
+  - tensorflow-gpu  >= 1.11.0  # GPU version of TensorFlow. (Upgrade to 1.14.0 when meets [ImportError: No module named 'tensorflow.python.distribute.cross_device_ops' ](https://github.com/HaoyuHu/bert-multi-gpu/issues/11))
 - NVIDIA Collective Communications Library (NCCL)
 
 
@@ -15,6 +15,14 @@ Feel free to fine tune large BERT models with large batch size easily. Multi-GPU
 
 - CPU/GPU/TPU Support
 - **Multi-GPU Support**: [`tf.distribute.MirroredStrategy`](https://www.tensorflow.org/api_docs/python/tf/distribute/MirroredStrategy) is used to achieve Multi-GPU support for this project, which mirrors vars to distribute across multiple devices and machines. The maximum batch_size for each GPU is almost the same as [bert](https://github.com/google-research/bert/blob/master/README.md#out-of-memory-issues). So **global batch_size** depends on how many GPUs there are.
+    - Assume: num_train_examples = 32000
+    - Situation 1 (multi-gpu): train_batch_size = 8, num_gpu_cores = 4, num_train_epochs = 1
+        - global_batch_size = train_batch_size * num_gpu_cores = 32
+        - iteration_steps = num_train_examples * num_train_epochs / train_batch_size = 4000
+    - Situation 2 (single-gpu): train_batch_size = 32, num_gpu_cores = 1, num_train_epochs = 4
+        - global_batch_size = train_batch_size * num_gpu_cores = 32
+        - iteration_steps = num_train_examples * num_train_epochs / train_batch_size = 4000
+    - Result after training is equivalent between situation 1 and 2 when synchronous update on gradients is applied.
 - **FP16 Support**: [FP16](https://en.wikipedia.org/wiki/Half-precision_floating-point_format) allows you to use a larger batch_size. And training speed will increase by 70~100% on Volta GPUs, but may be slower on Pascal GPUs([REF1](https://github.com/tensorflow/tensorflow/issues/15585#issuecomment-361769151), [REF2](https://github.com/HaoyuHu/bert-multi-gpu/issues/1#issuecomment-493363383)).
 - **SavedModel Export**
 
