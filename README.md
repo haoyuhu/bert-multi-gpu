@@ -73,7 +73,24 @@ python run_custom_classifier.py \
   --output_dir=/cfs/outputs/bert-large-uncased-qqp
 ```
 
+Shell script is available also (see run_custom_classifier.sh)
+- Optional params could be passed flexibly through command line.
+- CUDA_VISIBLE_DEVICES could be set and export as environmental variables when multi-gpus are used.
+```shell
+# refer to the variables acronym
+bash run_custom_classifier.sh -h
+# output
+current params setting:
+-s max_seq_length,        default val is: 128
+-g num_gpu_cores,         default val is: 4
+-b train_batch_size,      default val is: 32
+-l learning_rate,         default val is: 2e-5
+-e num_train_epochs,      default val is: 3.0
+-c CUDA_VISIBLE_DEVICES,  default val is: 0,1,2,3
 
+# example to pass params
+bash run_custom_classifier.sh - s 512 -b 8 -l 3e-5 -e 1 -g 2 -c 2,3
+```
 
 ### Run Sequence Labeling
 
