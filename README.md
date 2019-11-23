@@ -89,7 +89,7 @@ current params setting:
 -c CUDA_VISIBLE_DEVICES,  default val is: 0,1,2,3
 
 # example to pass params
-bash run_custom_classifier.sh - s 512 -b 8 -l 3e-5 -e 1 -g 2 -c 2,3
+bash run_custom_classifier.sh -s 512 -b 8 -l 3e-5 -e 1 -g 2 -c 2,3
 ```
 
 ### Run Sequence Labeling
