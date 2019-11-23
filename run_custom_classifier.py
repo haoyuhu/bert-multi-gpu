@@ -21,6 +21,8 @@ from __future__ import print_function
 import collections
 import csv
 import os
+import json
+import numpy as np
 import modeling
 import optimization
 import custom_optimization
@@ -1057,6 +1059,21 @@ def main(_):
             for key in sorted(result.keys()):
                 tf.logging.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+
+        # dump result as json file (easy parsing for other tasks)
+        class ExtEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                else:
+                    return super(ExtEncoder, self).default(obj)
+        output_eval_file2 = os.path.join(FLAGS.output_dir, "eval_results.json")
+        with tf.gfile.GFile(output_eval_file2, "w") as writer:
+            json.dump(result, writer, indent=4, cls=ExtEncoder)
 
     if FLAGS.do_predict:
         predict_examples = processor.get_test_examples(FLAGS.data_dir)
