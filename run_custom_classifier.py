@@ -767,27 +767,18 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                 }
             eval_metrics = (metric_fn,
                             [per_example_loss, label_ids, logits, is_real_example])
-            if use_gpu and int(num_gpu_cores) >= 2:
-                output_spec = tf.estimator.EstimatorSpec(
-                    mode=mode,
-                    loss=total_loss,
-                    eval_metric_ops=eval_metrics[0](*eval_metrics[1]))
-            else:
-                output_spec = tf.contrib.tpu.TPUEstimatorSpec(
-                    mode=mode,
-                    loss=total_loss,
-                    eval_metrics=eval_metrics,
-                    scaffold_fn=scaffold_fn)
+            # eval on single-gpu only
+            output_spec = tf.contrib.tpu.TPUEstimatorSpec(
+                mode=mode,
+                loss=total_loss,
+                eval_metrics=eval_metrics,
+                scaffold_fn=scaffold_fn)
         else:
-            if use_gpu and int(num_gpu_cores) >= 2:
-                output_spec = tf.estimator.EstimatorSpec(
-                    mode=mode,
-                    predictions={"probabilities": probabilities})
-            else:
-                output_spec = tf.contrib.tpu.TPUEstimatorSpec(
-                    mode=mode,
-                    predictions={"probabilities": probabilities},
-                    scaffold_fn=scaffold_fn)
+            # predict on single-gpu only
+            output_spec = tf.contrib.tpu.TPUEstimatorSpec(
+                mode=mode,
+                predictions={"probabilities": probabilities},
+                scaffold_fn=scaffold_fn)
 
         return output_spec
 
