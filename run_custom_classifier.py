@@ -20,17 +20,19 @@ from __future__ import print_function
 
 import collections
 import csv
-import os
 import json
+import os
+
 import numpy as np
+import tensorflow as tf
+from tensorflow.python.distribute.cross_device_ops import AllReduceCrossDeviceOps
+from tensorflow.python.estimator.estimator import Estimator
+from tensorflow.python.estimator.run_config import RunConfig
+
+import custom_optimization
 import modeling
 import optimization
-import custom_optimization
 import tokenization
-from tensorflow.python.distribute.cross_device_ops import AllReduceCrossDeviceOps
-import tensorflow as tf
-from tensorflow.python.estimator.run_config import RunConfig
-from tensorflow.python.estimator.estimator import Estimator
 
 flags = tf.flags
 
@@ -765,6 +767,7 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                     "eval_f1score": (f1, tf.identity(f1)),
                     "eval_loss": loss
                 }
+
             eval_metrics = (metric_fn,
                             [per_example_loss, label_ids, logits, is_real_example])
             # eval on single-gpu only
@@ -919,76 +922,70 @@ def main(_):
             FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
 
     is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
-    if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
-        tf.logging.info("Use normal RunConfig")
-        # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-422506263
-        dist_strategy = tf.contrib.distribute.MirroredStrategy(
-            num_gpus=FLAGS.num_gpu_cores,
-            cross_device_ops=AllReduceCrossDeviceOps('nccl', num_packs=FLAGS.num_gpu_cores),
-            # cross_device_ops=AllReduceCrossDeviceOps('hierarchical_copy'),
-        )
-        log_every_n_steps = 8
-        run_config = RunConfig(
-            train_distribute=dist_strategy,
-            eval_distribute=dist_strategy,
-            log_step_count_steps=log_every_n_steps,
-            model_dir=FLAGS.output_dir,
-            save_checkpoints_steps=FLAGS.save_checkpoints_steps)
-    else:
-        tf.logging.info("Use TPURunConfig")
-        run_config = tf.contrib.tpu.RunConfig(
-            cluster=tpu_cluster_resolver,
-            master=FLAGS.master,
-            model_dir=FLAGS.output_dir,
-            save_checkpoints_steps=FLAGS.save_checkpoints_steps,
-            tpu_config=tf.contrib.tpu.TPUConfig(
-                iterations_per_loop=FLAGS.iterations_per_loop,
-                num_shards=FLAGS.num_tpu_cores,
-                per_host_input_for_training=is_per_host))
 
-    train_examples = None
-    num_train_steps = None
-    num_warmup_steps = None
+    # https://github.com/tensorflow/tensorflow/issues/21470#issuecomment-422506263
+    dist_strategy = tf.contrib.distribute.MirroredStrategy(
+        num_gpus=FLAGS.num_gpu_cores,
+        cross_device_ops=AllReduceCrossDeviceOps('nccl', num_packs=FLAGS.num_gpu_cores),
+        # cross_device_ops=AllReduceCrossDeviceOps('hierarchical_copy'),
+    )
+    log_every_n_steps = 8
+    dist_run_config = RunConfig(
+        train_distribute=dist_strategy,
+        eval_distribute=dist_strategy,
+        log_step_count_steps=log_every_n_steps,
+        model_dir=FLAGS.output_dir,
+        save_checkpoints_steps=FLAGS.save_checkpoints_steps)
+
+    tpu_run_config = tf.contrib.tpu.RunConfig(
+        cluster=tpu_cluster_resolver,
+        master=FLAGS.master,
+        model_dir=FLAGS.output_dir,
+        save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+        tpu_config=tf.contrib.tpu.TPUConfig(
+            iterations_per_loop=FLAGS.iterations_per_loop,
+            num_shards=FLAGS.num_tpu_cores,
+            per_host_input_for_training=is_per_host))
+
+    num_train_steps = 0
+    num_warmup_steps = 0
+    init_checkpoint = FLAGS.init_checkpoint
+    is_multi_gpu = FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2
     if FLAGS.do_train:
         train_examples = processor.get_train_examples(FLAGS.data_dir)
         num_train_steps = int(
             len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
         num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
-    init_checkpoint = FLAGS.init_checkpoint
-
-    model_fn = model_fn_builder(
-        bert_config=bert_config,
-        num_labels=len(label_list),
-        init_checkpoint=init_checkpoint,
-        learning_rate=FLAGS.learning_rate,
-        num_train_steps=num_train_steps,
-        num_warmup_steps=num_warmup_steps,
-        use_tpu=FLAGS.use_tpu,
-        use_one_hot_embeddings=FLAGS.use_tpu,
-        use_gpu=FLAGS.use_gpu,
-        num_gpu_cores=FLAGS.num_gpu_cores,
-        fp16=FLAGS.use_fp16)
-
-    # If TPU is not available, this will fall back to normal Estimator on CPU
-    # or GPU.
-    if FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2:
-        tf.logging.info("Use normal Estimator")
-        estimator = Estimator(
-            model_fn=model_fn,
-            params={},
-            config=run_config)
-    else:
-        tf.logging.info("Use TPUEstimator")
-        estimator = tf.contrib.tpu.TPUEstimator(
+        model_fn = model_fn_builder(
+            bert_config=bert_config,
+            num_labels=len(label_list),
+            init_checkpoint=init_checkpoint,
+            learning_rate=FLAGS.learning_rate,
+            num_train_steps=num_train_steps,
+            num_warmup_steps=num_warmup_steps,
             use_tpu=FLAGS.use_tpu,
-            model_fn=model_fn,
-            config=run_config,
-            train_batch_size=FLAGS.train_batch_size,
-            eval_batch_size=FLAGS.eval_batch_size,
-            predict_batch_size=FLAGS.predict_batch_size)
+            use_one_hot_embeddings=FLAGS.use_tpu,
+            use_gpu=FLAGS.use_gpu,
+            num_gpu_cores=FLAGS.num_gpu_cores,
+            fp16=FLAGS.use_fp16)
 
-    if FLAGS.do_train:
+        # If TPU is not available, this will fall back to normal Estimator on CPU
+        # or GPU.
+        if is_multi_gpu:
+            estimator = Estimator(
+                model_fn=model_fn,
+                params={},
+                config=dist_run_config)
+        else:
+            estimator = tf.contrib.tpu.TPUEstimator(
+                use_tpu=FLAGS.use_tpu,
+                model_fn=model_fn,
+                config=tpu_run_config,
+                train_batch_size=FLAGS.train_batch_size,
+                eval_batch_size=FLAGS.eval_batch_size,
+                predict_batch_size=FLAGS.predict_batch_size)
+
         train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
         file_based_convert_examples_to_features(
             train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
@@ -1003,6 +1000,41 @@ def main(_):
             drop_remainder=True,
             batch_size=FLAGS.train_batch_size)
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+        # TF Serving
+        if FLAGS.save_for_serving:
+            serving_dir = os.path.join(FLAGS.output_dir, 'serving')
+            save_for_serving(estimator, serving_dir, FLAGS.max_seq_length, not is_multi_gpu)
+
+        # Find the latest checkpoint
+        max_idx = 0
+        for filename in os.listdir(FLAGS.output_dir):
+            if filename.startswith('model.ckpt-'):
+                max_idx = max(int(filename.split('.')[1].split('-')[1]), max_idx)
+        init_checkpoint = os.path.join(FLAGS.output_dir, f'model.ckpt-{max_idx}')
+
+    if not FLAGS.do_eval and not FLAGS.do_predict:
+        return
+
+    model_fn = model_fn_builder(
+        bert_config=bert_config,
+        num_labels=len(label_list),
+        init_checkpoint=init_checkpoint,
+        learning_rate=FLAGS.learning_rate,
+        num_train_steps=num_train_steps,
+        num_warmup_steps=num_warmup_steps,
+        use_tpu=FLAGS.use_tpu,
+        use_one_hot_embeddings=FLAGS.use_tpu,
+        use_gpu=FLAGS.use_gpu,
+        num_gpu_cores=FLAGS.num_gpu_cores,
+        fp16=FLAGS.use_fp16)
+
+    estimator = tf.contrib.tpu.TPUEstimator(
+        use_tpu=FLAGS.use_tpu,
+        model_fn=model_fn,
+        config=tpu_run_config,
+        train_batch_size=FLAGS.train_batch_size,
+        eval_batch_size=FLAGS.eval_batch_size,
+        predict_batch_size=FLAGS.predict_batch_size)
 
     if FLAGS.do_eval:
         eval_examples = processor.get_dev_examples(FLAGS.data_dir)
@@ -1062,6 +1094,7 @@ def main(_):
                     return obj.tolist()
                 else:
                     return super(ExtEncoder, self).default(obj)
+
         output_eval_file2 = os.path.join(FLAGS.output_dir, "eval_results.json")
         with tf.gfile.GFile(output_eval_file2, "w") as writer:
             json.dump(result, writer, indent=4, cls=ExtEncoder)
@@ -1112,11 +1145,6 @@ def main(_):
                 writer.write(output_line)
                 num_written_lines += 1
         assert num_written_lines == num_actual_predict_examples
-
-    if FLAGS.do_train and FLAGS.save_for_serving:
-        serving_dir = os.path.join(FLAGS.output_dir, 'serving')
-        is_tpu_estimator = not FLAGS.use_gpu or int(FLAGS.num_gpu_cores) < 2
-        save_for_serving(estimator, serving_dir, FLAGS.max_seq_length, is_tpu_estimator)
 
 
 if __name__ == "__main__":

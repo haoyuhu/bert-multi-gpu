@@ -85,6 +85,6 @@ python run_custom_classifier.py \
     --num_train_epochs=${num_train_epochs} \
     --use_gpu=true \
     --num_gpu_cores=${num_gpu_cores} \
-    --use_fp16=true \
+    --use_fp16=false \
     --output_dir=/cfs/outputs/bert-large-uncased-qqp
 echo "task is done..."

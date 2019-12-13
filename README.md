@@ -69,7 +69,7 @@ python run_custom_classifier.py \
   --num_train_epochs=3.0 \
   --use_gpu=true \
   --num_gpu_cores=4 \
-  --use_fp16=true \
+  --use_fp16=false \
   --output_dir=/cfs/outputs/bert-large-uncased-qqp
 ```
 
@@ -131,7 +131,7 @@ python run_seq_labeling.py \
   --num_train_epochs=10.0 \
   --use_gpu=true \
   --num_gpu_cores=4 \
-  --use_fp16=true \
+  --use_fp16=false \
   --output_dir=/cfs/outputs/bert-large-uncased-punct
 ```
 
