@@ -729,8 +729,9 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
             tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                             init_string)
 
+        is_multi_gpu = use_gpu and int(num_gpu_cores) >= 2
         if mode == tf.estimator.ModeKeys.TRAIN:
-            if use_gpu and int(num_gpu_cores) >= 2:
+            if is_multi_gpu:
                 train_op = custom_optimization.create_optimizer(
                     total_loss, learning_rate, num_train_steps, num_warmup_steps, fp16=fp16)
                 output_spec = tf.estimator.EstimatorSpec(
@@ -777,11 +778,15 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
                 eval_metrics=eval_metrics,
                 scaffold_fn=scaffold_fn)
         else:
-            # predict on single-gpu only
-            output_spec = tf.contrib.tpu.TPUEstimatorSpec(
-                mode=mode,
-                predictions={"probabilities": probabilities},
-                scaffold_fn=scaffold_fn)
+            if is_multi_gpu:
+                output_spec = tf.estimator.EstimatorSpec(
+                    mode=mode,
+                    predictions={"probabilities": probabilities})
+            else:
+                output_spec = tf.contrib.tpu.TPUEstimatorSpec(
+                    mode=mode,
+                    predictions={"probabilities": probabilities},
+                    scaffold_fn=scaffold_fn)
 
         return output_spec
 
@@ -947,45 +952,47 @@ def main(_):
             num_shards=FLAGS.num_tpu_cores,
             per_host_input_for_training=is_per_host))
 
-    num_train_steps = 0
-    num_warmup_steps = 0
-    init_checkpoint = FLAGS.init_checkpoint
-    is_multi_gpu = FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2
+    train_examples = None
+    num_train_steps = None
+    num_warmup_steps = None
     if FLAGS.do_train:
         train_examples = processor.get_train_examples(FLAGS.data_dir)
         num_train_steps = int(
             len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
         num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
-        model_fn = model_fn_builder(
-            bert_config=bert_config,
-            num_labels=len(label_list),
-            init_checkpoint=init_checkpoint,
-            learning_rate=FLAGS.learning_rate,
-            num_train_steps=num_train_steps,
-            num_warmup_steps=num_warmup_steps,
+    init_checkpoint = FLAGS.init_checkpoint
+    is_multi_gpu = FLAGS.use_gpu and int(FLAGS.num_gpu_cores) >= 2
+    model_fn = model_fn_builder(
+        bert_config=bert_config,
+        num_labels=len(label_list),
+        init_checkpoint=init_checkpoint,
+        learning_rate=FLAGS.learning_rate,
+        num_train_steps=num_train_steps,
+        num_warmup_steps=num_warmup_steps,
+        use_tpu=FLAGS.use_tpu,
+        use_one_hot_embeddings=FLAGS.use_tpu,
+        use_gpu=FLAGS.use_gpu,
+        num_gpu_cores=FLAGS.num_gpu_cores,
+        fp16=FLAGS.use_fp16)
+
+    # If TPU is not available, this will fall back to normal Estimator on CPU
+    # or GPU.
+    if is_multi_gpu:
+        estimator = Estimator(
+            model_fn=model_fn,
+            params={},
+            config=dist_run_config)
+    else:
+        estimator = tf.contrib.tpu.TPUEstimator(
             use_tpu=FLAGS.use_tpu,
-            use_one_hot_embeddings=FLAGS.use_tpu,
-            use_gpu=FLAGS.use_gpu,
-            num_gpu_cores=FLAGS.num_gpu_cores,
-            fp16=FLAGS.use_fp16)
+            model_fn=model_fn,
+            config=tpu_run_config,
+            train_batch_size=FLAGS.train_batch_size,
+            eval_batch_size=FLAGS.eval_batch_size,
+            predict_batch_size=FLAGS.predict_batch_size)
 
-        # If TPU is not available, this will fall back to normal Estimator on CPU
-        # or GPU.
-        if is_multi_gpu:
-            estimator = Estimator(
-                model_fn=model_fn,
-                params={},
-                config=dist_run_config)
-        else:
-            estimator = tf.contrib.tpu.TPUEstimator(
-                use_tpu=FLAGS.use_tpu,
-                model_fn=model_fn,
-                config=tpu_run_config,
-                train_batch_size=FLAGS.train_batch_size,
-                eval_batch_size=FLAGS.eval_batch_size,
-                predict_batch_size=FLAGS.predict_batch_size)
-
+    if FLAGS.do_train:
         train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
         file_based_convert_examples_to_features(
             train_examples, label_list, FLAGS.max_seq_length, tokenizer, train_file)
@@ -1011,32 +1018,30 @@ def main(_):
             if filename.startswith('model.ckpt-'):
                 max_idx = max(int(filename.split('.')[1].split('-')[1]), max_idx)
         init_checkpoint = os.path.join(FLAGS.output_dir, f'model.ckpt-{max_idx}')
-
-    if not FLAGS.do_eval and not FLAGS.do_predict:
-        return
-
-    model_fn = model_fn_builder(
-        bert_config=bert_config,
-        num_labels=len(label_list),
-        init_checkpoint=init_checkpoint,
-        learning_rate=FLAGS.learning_rate,
-        num_train_steps=num_train_steps,
-        num_warmup_steps=num_warmup_steps,
-        use_tpu=FLAGS.use_tpu,
-        use_one_hot_embeddings=FLAGS.use_tpu,
-        use_gpu=FLAGS.use_gpu,
-        num_gpu_cores=FLAGS.num_gpu_cores,
-        fp16=FLAGS.use_fp16)
-
-    estimator = tf.contrib.tpu.TPUEstimator(
-        use_tpu=FLAGS.use_tpu,
-        model_fn=model_fn,
-        config=tpu_run_config,
-        train_batch_size=FLAGS.train_batch_size,
-        eval_batch_size=FLAGS.eval_batch_size,
-        predict_batch_size=FLAGS.predict_batch_size)
+        tf.logging.info(f'Current checkpoint: {init_checkpoint}')
 
     if FLAGS.do_eval:
+        model_fn = model_fn_builder(
+            bert_config=bert_config,
+            num_labels=len(label_list),
+            init_checkpoint=init_checkpoint,
+            learning_rate=FLAGS.learning_rate,
+            num_train_steps=num_train_steps,
+            num_warmup_steps=num_warmup_steps,
+            use_tpu=FLAGS.use_tpu,
+            use_one_hot_embeddings=FLAGS.use_tpu,
+            use_gpu=FLAGS.use_gpu,
+            num_gpu_cores=FLAGS.num_gpu_cores,
+            fp16=FLAGS.use_fp16)
+
+        eval_estimator = tf.contrib.tpu.TPUEstimator(
+            use_tpu=FLAGS.use_tpu,
+            model_fn=model_fn,
+            config=tpu_run_config,
+            train_batch_size=FLAGS.train_batch_size,
+            eval_batch_size=FLAGS.eval_batch_size,
+            predict_batch_size=FLAGS.predict_batch_size)
+
         eval_examples = processor.get_dev_examples(FLAGS.data_dir)
         num_actual_eval_examples = len(eval_examples)
         if FLAGS.use_tpu:
@@ -1074,7 +1079,7 @@ def main(_):
             drop_remainder=eval_drop_remainder,
             batch_size=FLAGS.eval_batch_size)
 
-        result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
+        result = eval_estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
 
         output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
         with tf.gfile.GFile(output_eval_file, "w") as writer:
