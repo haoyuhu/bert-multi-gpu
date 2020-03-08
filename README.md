@@ -305,7 +305,7 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py` or `run_seq
 
 ## License
 <details>
-  <summary>Apache License, please click to see details.</summary>
+  <summary>Apache License, please click to check more details.</summary>
  
                                  Apache License
                            Version 2.0, January 2004
