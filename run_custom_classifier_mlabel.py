@@ -436,7 +436,7 @@ def file_based_input_fn_builder(input_file, seq_length, is_training,
 
     def input_fn(params):
         """The actual input function."""
-        batch_size = params["batch_size"]
+        # batch_size = params["batch_size"]
 
         # For training, we want a lot of parallel reading and shuffling.
         # For eval, we want no shuffling and parallel reading doesn't matter.
