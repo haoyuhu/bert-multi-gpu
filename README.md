@@ -92,6 +92,37 @@ current params setting:
 bash run_custom_classifier.sh -s 512 -b 8 -l 3e-5 -e 1 -g 2 -c 2,3
 ```
 
+### Run Multi-label Classification
+
+Use case: In some situations, one example could be assigned to different groups, e.g. one movie could be tagged as 
+romantic, commercial, boring with different aspects. As a result, multi-label classification should be applied rather than multi-class
+classification as labels are not exclusive (e.g. [1, 1, 0]). 
+
+One additional parameter **'num_labels'** are required and other parameters keep similar to basic classifier.
+
+```shell
+python run_custom_classifier_mlabel.py \
+  --num_labels=10 \
+  --task_name=Mlabel \
+  --do_lower_case=true \
+  --do_train=true \
+  --do_eval=true \
+  --do_predict=true \
+  --save_for_serving=true \
+  --data_dir=/cfs/data/Mlabel \
+  --vocab_file=/cfs/models/bert-large-uncased/vocab.txt \
+  --bert_config_file=/cfs/models/bert-large-uncased/bert_config.json \
+  --init_checkpoint=/cfs/models/bert-large-uncased/bert_model.ckpt \
+  --max_seq_length=128 \
+  --train_batch_size=32 \
+  --learning_rate=2e-5 \
+  --num_train_epochs=3.0 \
+  --use_gpu=true \
+  --num_gpu_cores=4 \
+  --use_fp16=false \
+  --output_dir=/cfs/outputs/bert-large-uncased-mlabel
+```
+
 ### Run Sequence Labeling
 
 List some optional parameters below:
@@ -273,8 +304,9 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py` or `run_seq
   
 
 ## License
-
-```
+<details>
+  <summary>Apache License, please click to check more details.</summary>
+ 
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -476,5 +508,7 @@ If `--save_for_serving=true` is passed to `run_custom_classifier.py` or `run_seq
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+  
 
-```
+</details>
+
